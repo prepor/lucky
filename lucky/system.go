@@ -1,13 +1,14 @@
 package lucky
 
 import (
-	log "github.com/Sirupsen/logrus"
-	"github.com/davecgh/go-spew/spew"
-	"github.com/pebbe/zmq4"
 	"os"
+	"time"
+
+	log "github.com/Sirupsen/logrus"
+	"github.com/pebbe/zmq4"
+
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 type System struct {
@@ -19,10 +20,10 @@ type System struct {
 
 func (sys *System) Start() {
 	go httpServer(sys)
-	log.Debug("Start with config:")
-	log.Debug(spew.Sdump(sys.config))
+	// log.Debug("Start with config:")
+	// log.Debug(spew.Sdump(sys.config))
 	for _, config := range sys.config.Balancers {
-		_, err := sys.StartBalancer(config.Name, config.Front, config.Back)
+		_, err := NewBalancer(sys, config)
 		if err != nil {
 			log.WithFields(log.Fields{
 				"error":  err,
@@ -68,35 +69,4 @@ func (self *System) CreateSocket(config *SocketConfig) (*zmq4.Socket, error) {
 		return nil, err
 	}
 	return socket, nil
-}
-
-func (s *System) StartBalancer(name string, front_config *SocketConfig, back_config *SocketConfig) (*Balancer, error) {
-	front, err := s.CreateSocket(front_config)
-	if err != nil {
-		return nil, err
-	}
-	back, err := s.CreateSocket(back_config)
-	if err != nil {
-		return nil, err
-	}
-	balancer := &Balancer{
-		name:    name,
-		front:   front,
-		back:    back,
-		workers: make(map[string]*Worker),
-		system:  s,
-	}
-	s.processes.Add(1)
-	go func() {
-		defer front.Close()
-		defer back.Close()
-		defer s.processes.Done()
-		log.WithFields(log.Fields{
-			"name":         name,
-			"front_config": front_config,
-			"back_config":  back_config,
-		}).Info("Start zmq balancer")
-		balancer.Run()
-	}()
-	return balancer, nil
 }

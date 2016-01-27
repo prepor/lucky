@@ -1,9 +1,10 @@
 package lucky
 
 import (
+	"io/ioutil"
+
 	"gopkg.in/edn.v1"
 	"gopkg.in/go-playground/validator.v8"
-	"io/ioutil"
 )
 
 var validate = validator.New(&validator.Config{TagName: "validate"})
@@ -13,13 +14,15 @@ type Config struct {
 }
 
 type BalancerConfig struct {
-	Name  string        `validate:"required"`
-	Front *SocketConfig `edn:"front" validate:"required"`
-	Back  *SocketConfig `edn:"back" validate:"required"`
+	Name    string        `validate:"required"`
+	Workers int           `validate:"omitempty,min=1"`
+	Front   *SocketConfig `validate:"required"`
+	Back    *SocketConfig `validate:"required"`
 }
 
 type SocketConfig struct {
-	Bind []string `edn:"bind" validate:"omitempty,min=1,dive,required"`
+	Connect []string `validate:"omitempty,min=1,dive,required"`
+	Bind    []string `validate:"omitempty,min=1,dive,required"`
 }
 
 func ParseConfig(path string) (*Config, error) {

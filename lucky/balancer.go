@@ -1,120 +1,93 @@
 package lucky
 
 import (
-	"encoding/base64"
 	"errors"
-	log "github.com/Sirupsen/logrus"
-	"github.com/pebbe/zmq4"
-	"github.com/satori/go.uuid"
+	"fmt"
 	"math/rand"
 	"syscall"
 	"time"
-)
 
-type Request struct {
-	socket     *zmq4.Socket
-	start_time time.Time
-	request_id string
-	route      [][]byte
-}
+	log "github.com/Sirupsen/logrus"
+	"github.com/pebbe/zmq4"
+)
 
 const (
-	ONLINE  = iota
-	OFFLINE = iota
+	BALANCER_BACKEND_ONLINE = iota
+	BALANCER_BACKEND_OFFLINE
 )
 
-type state int
-
-type Worker struct {
-	id                string
-	balancer          *Balancer
-	heartbeatSent     time.Time
-	heartbeatReceived time.Time
-	reqId             uint64
-	requests          map[string]*Request
-	state             state
-	logger            *log.Entry
-}
-
 type Balancer struct {
-	name    string
-	system  *System
-	workers map[string]*Worker
-	front   *zmq4.Socket
-	back    *zmq4.Socket
+	name     string
+	system   *System
+	backends map[string]*BalancerBackendRef
+	front    *zmq4.Socket
+	back     *zmq4.Socket
+	internal *zmq4.Socket
+	config   *BalancerConfig
 }
 
-func NewWorker(id string, balancer *Balancer) *Worker {
-	now := time.Now()
-	worker := &Worker{
-		id: id,
-		logger: log.WithFields(log.Fields{
-			"balancer": balancer.name,
-			"worker":   base64.StdEncoding.EncodeToString([]byte(id)),
-		}),
-		heartbeatSent:     now,
-		heartbeatReceived: now,
-		requests:          make(map[string]*Request),
-		balancer:          balancer,
-		reqId:             0,
-		state:             ONLINE,
-	}
-	worker.logger.Info("New worker")
-	return worker
+type BalancerBackendRef struct {
+	backend *BalancerBackend
+	state   int
 }
 
-func (self *Worker) SendRequest(front *zmq4.Socket, route [][]byte, body []byte) error {
-	reqId := uuid.NewV4().String()
-	req := &Request{
-		socket:     front,
-		request_id: reqId,
-		start_time: time.Now(),
-		route:      route,
-	}
-	self.requests[reqId] = req
-	_, err := self.balancer.back.SendMessage(self.id, "REQUEST", reqId, body)
+func NewBalancer(system *System, config *BalancerConfig) (*Balancer, error) {
+	front, err := system.CreateSocket(config.Front)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	self.heartbeatSent = time.Now()
-	return nil
-}
-
-func (self *Worker) SendHeartbeat() error {
-	self.logger.Debug("Send heartbeat")
-	_, err := self.balancer.back.SendMessage(self.id, "HEARTBEAT")
-	self.heartbeatSent = time.Now()
-	return err
-}
-
-func (self *Worker) HeartbeatReceived() {
-	self.logger.Debug("Heartbeat received")
-	self.heartbeatReceived = time.Now()
-}
-
-func (self *Worker) Reply(reqId string, payload []byte) error {
-	self.logger.WithFields(log.Fields{
-		"request": reqId,
-		"payload": payload}).Debug("Request reply")
-	req, pst := self.requests[reqId]
-	if !pst {
-		return errors.New("Unknown request")
+	back, err := system.CreateSocket(config.Back)
+	if err != nil {
+		return nil, err
 	}
-	requestsHistogram.Observe(time.Since(req.start_time).Seconds() / 1000)
-	delete(self.requests, reqId)
-	self.heartbeatReceived = time.Now()
-	_, err := req.socket.SendMessage(req.route, "", payload)
-	return err
+
+	internal, err := system.zmq.NewSocket(zmq4.PULL)
+	if err != nil {
+		return nil, err
+	}
+	err = internal.Bind(fmt.Sprintf("inproc://balancer_internal_%s", config.Name))
+	if err != nil {
+		return nil, err
+	}
+	err = internal.SetLinger(0)
+	if err != nil {
+		return nil, err
+	}
+
+	balancer := &Balancer{
+		name:     config.Name,
+		front:    front,
+		back:     back,
+		internal: internal,
+		backends: make(map[string]*BalancerBackendRef),
+		system:   system,
+		config:   config,
+	}
+	system.processes.Add(1)
+	go balancer.run()
+	return balancer, nil
 }
 
-func (self *Worker) Disconnect() {
-	self.logger.Info("Worker disconnected")
-	for _, req := range self.requests {
-		req.socket.SendMessage(req.route, "", "")
+func (self *Balancer) loadBalance() (*BalancerBackend, error) {
+	if len(self.backends) == 0 {
+		return nil, errors.New("No backends")
+	} else {
+		keys := make([]string, 0, len(self.backends))
+		for k, w := range self.backends {
+			if w.state == BALANCER_BACKEND_ONLINE {
+				keys = append(keys, k)
+			}
+		}
+		random_key := keys[rand.Intn(len(keys))]
+		return self.backends[random_key].backend, nil
 	}
 }
 
-func frontRequest(msg [][]byte) (route [][]byte, body []byte, err error) {
+func (self *Balancer) InternalZmqEndpoint() string {
+	return fmt.Sprintf("inproc://balancer_internal_%s", self.name)
+}
+
+func (self *Balancer) frontRequest(msg [][]byte) (route [][]byte, body []byte, err error) {
 	for i, part := range msg {
 		if len(part) == 0 && len(msg) == i+2 {
 			return msg[:i], msg[i+1], nil
@@ -125,32 +98,18 @@ func frontRequest(msg [][]byte) (route [][]byte, body []byte, err error) {
 	return nil, nil, errors.New("Invalid front msg")
 }
 
-func (self *Balancer) loadBalance() (*Worker, error) {
-	if len(self.workers) == 0 {
-		return nil, errors.New("No workers")
-	} else {
-		keys := make([]string, 0, len(self.workers))
-		for k, w := range self.workers {
-			if w.state == ONLINE {
-				keys = append(keys, k)
-			}
-		}
-		random_key := keys[rand.Intn(len(keys))]
-		return self.workers[random_key], nil
-	}
-}
-
 func (self *Balancer) handleFront(msg [][]byte) error {
-	route, body, err := frontRequest(msg)
+	route, body, err := self.frontRequest(msg)
 	if err != nil {
 		return err
 	}
-	worker, err := self.loadBalance()
+	backend, err := self.loadBalance()
 	if err != nil {
+		log.WithField("balancer", self.name).Warn("No backends")
 		self.front.SendMessage(route, "", "")
 		return err
 	}
-	err = worker.SendRequest(self.front, route, body)
+	err = backend.AddRequest(route, body)
 	if err != nil {
 		self.front.SendMessage(route, "", "")
 		return err
@@ -159,23 +118,63 @@ func (self *Balancer) handleFront(msg [][]byte) error {
 }
 
 func (self *Balancer) handleBack(msg [][]byte) error {
-	workerId := string(msg[0])
+	backendId := string(msg[0])
 	command := string(msg[1])
 	switch command {
+	default:
+		return errors.New("Unknown command")
 	case "READY":
-		self.workers[workerId] = NewWorker(workerId, self)
+		backend, err := NewBalancerBackend(backendId, self)
+		if err != nil {
+			return err
+		}
+		self.backends[backendId] = &BalancerBackendRef{
+			backend: backend,
+			state:   BALANCER_BACKEND_ONLINE}
 	case "HEARTBEAT":
-		worker, pst := self.workers[workerId]
+		ref, pst := self.backends[backendId]
 		if pst == false {
 			return errors.New("Can't find worker")
 		}
-		worker.HeartbeatReceived()
+		return ref.backend.AddHeartbeat()
 	case "REPLY":
-		worker, pst := self.workers[workerId]
+		ref, pst := self.backends[backendId]
 		if pst == false {
 			return errors.New("Can't find worker")
 		}
-		return worker.Reply(string(msg[2]), msg[3])
+		return ref.backend.AddReply(string(msg[2]), msg[3])
+	case "DISCONNECT":
+		ref, pst := self.backends[backendId]
+		if pst {
+			ref.backend.AddClose()
+			delete(self.backends, backendId)
+		}
+	}
+	return nil
+}
+
+func (self *Balancer) handleInternal(msg [][]byte) error {
+	command := string(msg[0])
+	switch command {
+	default:
+		return errors.New("Unknown command")
+	case "FRONT_PROXY":
+		_, err := self.front.SendMessage(msg[1:])
+		return err
+	case "BACK_PROXY":
+		_, err := self.back.SendMessage(msg[1:])
+		return err
+	case "IM_OFFLINE":
+		self.handleFront(msg[1:])
+	case "DISCONNECT":
+		id := string(msg[1])
+		ref, pst := self.backends[id]
+		if pst {
+			ref.backend.AddClose()
+			delete(self.backends, id)
+		}
+		_, err := self.back.SendMessage(id, "DISCONNECT")
+		return err
 	}
 	return nil
 }
@@ -195,38 +194,55 @@ func (self *Balancer) handleMessages(socket *zmq4.Socket, fn func([][]byte) erro
 	}
 }
 
-func (self *Balancer) startHeartbeater() {
-	for {
-		to_disconnect := make([]*Worker, 0, len(self.workers))
-		for _, w := range self.workers {
-			if time.Since(w.heartbeatSent).Seconds() > 3 {
-				w.SendHeartbeat()
-			}
+var BALANCER_FORCE_STOP_TIMEOUT = 5 * time.Second
 
-			if time.Since(w.heartbeatReceived).Seconds() > 10 {
-				to_disconnect = append(to_disconnect, w)
-			}
-		}
-
-		for _, w := range to_disconnect {
-			w.Disconnect()
-			delete(self.workers, w.id)
-		}
-
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
-func (self *Balancer) Run() {
-	go self.startHeartbeater()
+func (self *Balancer) Loop() {
 	poller := zmq4.NewPoller()
 	poller.Add(self.front, zmq4.POLLIN)
 	poller.Add(self.back, zmq4.POLLIN)
+	poller.Add(self.internal, zmq4.POLLIN)
+	running := true
+	force_stop := false
+	var force_stopped_at time.Time
 	for {
-		if !self.system.Running.Load().(bool) {
-			return
+		if !self.system.Running.Load().(bool) && running {
+			self.front.Close()
+			poller = zmq4.NewPoller()
+			poller.Add(self.back, zmq4.POLLIN)
+			poller.Add(self.internal, zmq4.POLLIN)
+
+			for k := range self.backends {
+				_, err := self.back.SendMessage(k, "DISCONNECT")
+				if err != nil {
+					log.WithFields(log.Fields{
+						"error":    err,
+						"balancer": self.name,
+					}).Error("Error while sending disconnect")
+				}
+			}
+			running = false
+			force_stop = true
+			force_stopped_at = time.Now()
 		}
-		sockets, _ := poller.Poll(100 * time.Millisecond)
+
+		if force_stop && time.Since(force_stopped_at) > BALANCER_FORCE_STOP_TIMEOUT {
+			log.WithField("balancer", self.name).Warn("Force stopping")
+			for k, ref := range self.backends {
+				ref.backend.AddClose()
+				delete(self.backends, k)
+			}
+		}
+		if !running && len(self.backends) == 0 {
+			break
+		}
+
+		sockets, err := poller.Poll(100 * time.Millisecond)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error":    err,
+				"balancer": self.name,
+			}).Error("Polling error")
+		}
 		for _, socket := range sockets {
 
 			var err error
@@ -235,14 +251,27 @@ func (self *Balancer) Run() {
 				err = self.handleMessages(self.front, self.handleFront)
 			case self.back:
 				err = self.handleMessages(self.back, self.handleBack)
+			case self.internal:
+				err = self.handleMessages(self.internal, self.handleInternal)
 			}
+
 			if err != nil {
 				log.WithFields(log.Fields{
 					"error":    err,
 					"balancer": self.name,
 				}).Error("Message handling error")
-
 			}
 		}
 	}
+	self.internal.Close()
+}
+
+func (self *Balancer) run() {
+	defer self.front.Close()
+	defer self.back.Close()
+	defer self.system.processes.Done()
+	log.WithFields(log.Fields{
+		"name": self.config.Name,
+	}).Info("Start zmq balancer")
+	self.Loop()
 }

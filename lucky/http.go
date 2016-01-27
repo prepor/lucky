@@ -2,8 +2,10 @@ package lucky
 
 import (
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
+
 	"net/http"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func handler(sys *System, w http.ResponseWriter, r *http.Request) {

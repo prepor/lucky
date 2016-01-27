@@ -3,10 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
+
+	"os/signal"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/prepor/lucky/lucky"
-	"os"
-	"os/signal"
 )
 
 func signalsHandler(sys *lucky.System, signals chan os.Signal) {
