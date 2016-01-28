@@ -53,7 +53,7 @@ func NewBalancerBackend(id string, balancer *Balancer) (*BalancerBackend, error)
 		id: id,
 		logger: log.WithFields(log.Fields{
 			"balancer": balancer.name,
-			"worker":   base64.StdEncoding.EncodeToString([]byte(id)),
+			"backend":  base64.StdEncoding.EncodeToString([]byte(id)),
 		}),
 		heartbeatSent:     now,
 		heartbeatReceived: now,

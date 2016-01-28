@@ -107,7 +107,7 @@ func (self *Balancer) handleFront(msg [][]byte) error {
 	if err != nil {
 		log.WithField("balancer", self.name).Warn("No backends")
 		self.front.SendMessage(route, "", "")
-		return err
+		return nil
 	}
 	err = backend.AddRequest(route, body)
 	if err != nil {
@@ -246,20 +246,30 @@ func (self *Balancer) Loop() {
 		for _, socket := range sockets {
 
 			var err error
+			var errSocket string
 			switch socket.Socket {
 			case self.front:
 				err = self.handleMessages(self.front, self.handleFront)
+				if err != nil {
+					errSocket = "front"
+				}
 			case self.back:
 				err = self.handleMessages(self.back, self.handleBack)
+				if err != nil {
+					errSocket = "back"
+				}
 			case self.internal:
 				err = self.handleMessages(self.internal, self.handleInternal)
+				if err != nil {
+					errSocket = "internal"
+				}
 			}
 
 			if err != nil {
 				log.WithFields(log.Fields{
 					"error":    err,
 					"balancer": self.name,
-				}).Error("Message handling error")
+				}).Errorf("Message handling error in %s socket", errSocket)
 			}
 		}
 	}
