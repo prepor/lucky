@@ -1,0 +1,73 @@
+{
+	"ImportPath": "github.com/prepor/lucky",
+	"GoVersion": "go1.5",
+	"Packages": [
+		"./..."
+	],
+	"Deps": [
+		{
+			"ImportPath": "github.com/Sirupsen/logrus",
+			"Comment": "v0.8.7-55-gf7f79f7",
+			"Rev": "f7f79f729e0fbe2fcc061db48a9ba0263f588252"
+		},
+		{
+			"ImportPath": "github.com/beorn7/perks/quantile",
+			"Rev": "b965b613227fddccbfffe13eae360ed3fa822f8d"
+		},
+		{
+			"ImportPath": "github.com/golang/protobuf/proto",
+			"Rev": "6aaa8d47701fa6cf07e914ec01fde3d4a1fe79c3"
+		},
+		{
+			"ImportPath": "github.com/matttproud/golang_protobuf_extensions/pbutil",
+			"Rev": "d0c3fe89de86839aecf2e0579c40ba3bb336a453"
+		},
+		{
+			"ImportPath": "github.com/pebbe/zmq4",
+			"Rev": "7d78d887c96e116d7e87225b81b11e25a752dd5c"
+		},
+		{
+			"ImportPath": "github.com/prometheus/client_golang/prometheus",
+			"Comment": "0.7.0-68-g67994f1",
+			"Rev": "67994f177195311c3ea3d4407ed0175e34a4256f"
+		},
+		{
+			"ImportPath": "github.com/prometheus/client_model/go",
+			"Comment": "model-0.0.2-12-gfa8ad6f",
+			"Rev": "fa8ad6fec33561be4280a8f0514318c79d7f6cb6"
+		},
+		{
+			"ImportPath": "github.com/prometheus/common/expfmt",
+			"Rev": "14ca1097bbe21584194c15e391a9dab95ad42a59"
+		},
+		{
+			"ImportPath": "github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg",
+			"Rev": "14ca1097bbe21584194c15e391a9dab95ad42a59"
+		},
+		{
+			"ImportPath": "github.com/prometheus/common/model",
+			"Rev": "14ca1097bbe21584194c15e391a9dab95ad42a59"
+		},
+		{
+			"ImportPath": "github.com/prometheus/procfs",
+			"Rev": "406e5b7bfd8201a36e2bb5f7bdae0b03380c2ce8"
+		},
+		{
+			"ImportPath": "github.com/satori/go.uuid",
+			"Rev": "d41af8bb6a7704f00bc3b7cba9355ae6a5a80048"
+		},
+		{
+			"ImportPath": "golang.org/x/sys/unix",
+			"Rev": "eb2c74142fd19a79b3f237334c7384d5167b1b46"
+		},
+		{
+			"ImportPath": "gopkg.in/edn.v1",
+			"Rev": "7c86d97e46dab36ff49f65aa1e8bfe905463f067"
+		},
+		{
+			"ImportPath": "gopkg.in/go-playground/validator.v8",
+			"Comment": "v8.15.1",
+			"Rev": "c193cecd124b5cc722d7ee5538e945bdb3348435"
+		}
+	]
+}

@@ -14,6 +14,7 @@ type BalancerBackendRequest struct {
 	startTime time.Time
 	reqId     string
 	route     [][]byte
+	method    []byte
 	body      []byte
 }
 
@@ -68,12 +69,13 @@ func NewBalancerBackend(id string, balancer *Balancer) (*BalancerBackend, error)
 	return backend, nil
 }
 
-func (self *BalancerBackend) AddRequest(route [][]byte, body []byte) error {
+func (self *BalancerBackend) AddRequest(route [][]byte, method []byte, body []byte) error {
 	reqId := uuid.NewV4().String()
 	v := &BalancerBackendRequest{
 		reqId:     reqId,
 		startTime: time.Now(),
 		route:     route,
+		method:    method,
 		body:      body,
 	}
 	self.incoming <- v
@@ -96,6 +98,7 @@ func (self *BalancerBackend) AddHeartbeat() error {
 }
 
 func (self *BalancerBackend) AddClose() error {
+	self.logger.Info("Backend disconnected")
 	v := &BalancerBackendClose{}
 	self.incoming <- v
 	return nil
@@ -109,7 +112,6 @@ func (self *BalancerBackend) SendHeartbeat() error {
 }
 
 func (self *BalancerBackend) SendDisconnect() error {
-	self.logger.Info("Backend disconnected")
 	for _, req := range self.requests {
 		_, err := self.outgoing.SendMessage("FRONT_PROXY", req.route, "", "")
 		if err != nil {
@@ -131,8 +133,12 @@ func (self *BalancerBackend) handleRequest(req *BalancerBackendRequest) error {
 		_, err := self.outgoing.SendMessage("IM_OFFLINE", req.route, "", req.body)
 		return err
 	}
+	self.logger.WithFields(log.Fields{
+		"request": req.reqId,
+		"method":  string(req.method),
+		"payload": req.body}).Debug("Request")
 	self.requests[req.reqId] = req
-	_, err := self.outgoing.SendMessage("BACK_PROXY", self.id, "REQUEST", req.reqId, req.body)
+	_, err := self.outgoing.SendMessage("BACK_PROXY", self.id, "REQUEST", req.reqId, req.method, req.body)
 	if err != nil {
 		return err
 	}

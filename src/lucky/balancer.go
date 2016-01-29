@@ -87,19 +87,19 @@ func (self *Balancer) InternalZmqEndpoint() string {
 	return fmt.Sprintf("inproc://balancer_internal_%s", self.name)
 }
 
-func (self *Balancer) frontRequest(msg [][]byte) (route [][]byte, body []byte, err error) {
+func (self *Balancer) frontRequest(msg [][]byte) (route [][]byte, method []byte, body []byte, err error) {
 	for i, part := range msg {
-		if len(part) == 0 && len(msg) == i+2 {
-			return msg[:i], msg[i+1], nil
+		if len(part) == 0 && len(msg) == i+3 {
+			return msg[:i], msg[i+1], msg[i+2], nil
 		} else if len(part) == 0 {
-			return nil, nil, errors.New("Invalid front msg")
+			return nil, nil, nil, errors.New("Invalid front msg")
 		}
 	}
-	return nil, nil, errors.New("Invalid front msg")
+	return nil, nil, nil, errors.New("Invalid front msg")
 }
 
 func (self *Balancer) handleFront(msg [][]byte) error {
-	route, body, err := self.frontRequest(msg)
+	route, method, body, err := self.frontRequest(msg)
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,7 @@ func (self *Balancer) handleFront(msg [][]byte) error {
 		self.front.SendMessage(route, "", "")
 		return nil
 	}
-	err = backend.AddRequest(route, body)
+	err = backend.AddRequest(route, method, body)
 	if err != nil {
 		self.front.SendMessage(route, "", "")
 		return err
@@ -117,13 +117,16 @@ func (self *Balancer) handleFront(msg [][]byte) error {
 	return nil
 }
 
-func (self *Balancer) handleBack(msg [][]byte) error {
+func (self *Balancer) handleBack(running bool, msg [][]byte) error {
 	backendId := string(msg[0])
 	command := string(msg[1])
 	switch command {
 	default:
 		return errors.New("Unknown command")
 	case "READY":
+		if !running {
+			return errors.New("In stop state, can't accept new backend")
+		}
 		backend, err := NewBalancerBackend(backendId, self)
 		if err != nil {
 			return err
@@ -134,7 +137,7 @@ func (self *Balancer) handleBack(msg [][]byte) error {
 	case "HEARTBEAT":
 		ref, pst := self.backends[backendId]
 		if pst == false {
-			return errors.New("Can't find worker")
+			return errors.New("Can't find backend")
 		}
 		return ref.backend.AddHeartbeat()
 	case "REPLY":
@@ -149,6 +152,13 @@ func (self *Balancer) handleBack(msg [][]byte) error {
 			ref.backend.AddClose()
 			delete(self.backends, backendId)
 		}
+	case "SHUTDOWN":
+		ref, pst := self.backends[backendId]
+		if pst {
+			ref.state = BALANCER_BACKEND_OFFLINE
+		}
+		_, err := self.back.SendMessage(backendId, "SHUTDOWN")
+		return err
 	}
 	return nil
 }
@@ -254,7 +264,7 @@ func (self *Balancer) Loop() {
 					errSocket = "front"
 				}
 			case self.back:
-				err = self.handleMessages(self.back, self.handleBack)
+				err = self.handleMessages(self.back, func(msg [][]byte) error { return self.handleBack(running, msg) })
 				if err != nil {
 					errSocket = "back"
 				}

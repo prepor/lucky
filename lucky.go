@@ -8,7 +8,7 @@ import (
 	"os/signal"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/prepor/lucky/lucky"
+	"github.com/prepor/lucky/src/lucky"
 )
 
 func signalsHandler(sys *lucky.System, signals chan os.Signal) {
