@@ -11,6 +11,8 @@ import (
 	"github.com/prepor/lucky/src/lucky"
 )
 
+import _ "net/http/pprof"
+
 func signalsHandler(sys *lucky.System, signals chan os.Signal) {
 	for {
 		s := <-signals

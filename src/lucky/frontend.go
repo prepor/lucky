@@ -2,6 +2,7 @@ package lucky
 
 import (
 	"net"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/prepor/zmtp"
@@ -15,7 +16,7 @@ type ZMQFrontend struct {
 	control chan bool
 }
 
-func NewFrontend(system *System, config *FrontendConfig, initBackend *Backend) (*ZMQFrontend, error) {
+func NewZMQFrontend(system *System, config *FrontendConfig, initBackend *Backend) (*ZMQFrontend, error) {
 	self := &ZMQFrontend{
 		system:  system,
 		logger:  log.WithField("frontend", config.Bind),
@@ -97,10 +98,10 @@ func (self *ZMQFrontend) listenerLoop(listener *zmtp.Listener, initBackend *Back
 func (self *ZMQFrontend) socketLoop(socket *zmtp.Socket, addr *net.Addr, initBackend *Backend) {
 	logger := self.logger.WithField("remote", addr)
 	defer socket.Close()
-	defer logger.Debug("Close")
+	defer logger.Info("Close")
 	defer self.system.processes.Done()
 
-	logger.Debug("Connected")
+	logger.Info("Connected")
 
 	backend := initBackend
 	read := socket.Read()
@@ -129,6 +130,7 @@ func (self *ZMQFrontend) socketLoop(socket *zmtp.Socket, addr *net.Addr, initBac
 			}
 		case v := <-answers:
 			err := socket.Send(v.Route, "", v.Reply)
+			requestsHistogram.Observe(time.Since(v.StartTime).Seconds() / 1000)
 			if err != nil {
 				self.logger.WithError(err).Error("Can't send reply")
 			}

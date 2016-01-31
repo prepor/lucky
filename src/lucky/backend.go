@@ -135,11 +135,11 @@ func (self *Backend) socketLoop(socket *zmtp.Socket, addr *net.Addr) {
 	requests := make(map[string]*Request)
 	defer self.dropRequests(requests)
 	defer socket.Close()
-	defer logger.Debug("Close")
+	defer logger.Info("Close")
 	defer self.instances.Done()
 	defer self.system.processes.Done()
 
-	logger.Debug("Connected")
+	logger.Info("Connected")
 
 	read := socket.Read()
 	for {
@@ -170,6 +170,7 @@ func (self *Backend) socketLoop(socket *zmtp.Socket, addr *net.Addr) {
 				reqId := string(route[0])
 				req, pst := requests[reqId]
 				if pst {
+					delete(requests, reqId)
 					logger.WithField("request", req.Id).Debug("Request reply")
 					req.Answer(payload)
 				} else {

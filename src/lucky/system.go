@@ -31,15 +31,20 @@ func (sys *System) Start() {
 	}
 
 	for _, config := range sys.config.Frontends {
-		backend, pst := backends[config.Backend]
-		if !pst {
-			log.Fatalf("There are no backend %s", config.Backend)
-			os.Exit(1)
-		}
-		_, err := NewFrontend(sys, config, backend)
-		if err != nil {
-			log.WithError(err).Fatal("Can't start frontend")
-			os.Exit(1)
+		switch string(config.Type) {
+		case "zmq":
+			backend, pst := backends[config.Backend]
+			if !pst {
+				log.Fatalf("There are no backend %s", config.Backend)
+				os.Exit(1)
+			}
+			_, err := NewZMQFrontend(sys, config, backend)
+			if err != nil {
+				log.WithError(err).Fatal("Can't start frontend")
+				os.Exit(1)
+			}
+		case "http":
+			NewHttpFrontend(sys, config.Endpoint)
 		}
 	}
 

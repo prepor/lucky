@@ -1,5 +1,7 @@
 {:frontends
- [{:type :zmq
+ [{:type :http
+   :endpoint "0.0.0.0:7000"}
+  {:type :zmq
    :bind ["0.0.0.0:6000"]
    :backend :main}]
  :backends

@@ -15,9 +15,10 @@ type Config struct {
 }
 
 type FrontendConfig struct {
-	Type    edn.Keyword
-	Bind    []string `validate:"omitempty,min=1,dive,required"`
-	Backend edn.Keyword
+	Type     edn.Keyword
+	Endpoint string
+	Bind     []string `validate:"omitempty,min=1,dive,required"`
+	Backend  edn.Keyword
 }
 
 type BackendConfig struct {
