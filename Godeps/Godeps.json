@@ -1,9 +1,6 @@
 {
 	"ImportPath": "github.com/prepor/lucky",
 	"GoVersion": "go1.5",
-	"Packages": [
-		"./..."
-	],
 	"Deps": [
 		{
 			"ImportPath": "github.com/Sirupsen/logrus",
@@ -23,8 +20,8 @@
 			"Rev": "d0c3fe89de86839aecf2e0579c40ba3bb336a453"
 		},
 		{
-			"ImportPath": "github.com/pebbe/zmq4",
-			"Rev": "7d78d887c96e116d7e87225b81b11e25a752dd5c"
+			"ImportPath": "github.com/prepor/zmtp",
+			"Rev": "09657ca188d6a87825d30aa34d8980c0b9bf8d1a"
 		},
 		{
 			"ImportPath": "github.com/prometheus/client_golang/prometheus",
