@@ -2,71 +2,64 @@ package lucky
 
 import (
 	"os"
-	"time"
 
-	log "github.com/Sirupsen/logrus"
-	"github.com/pebbe/zmq4"
+	"gopkg.in/edn.v1"
 
 	"sync"
-	"sync/atomic"
+
+	log "github.com/Sirupsen/logrus"
+	"github.com/prepor/lucky/src/util"
 )
 
 type System struct {
-	zmq       *zmq4.Context
-	Running   atomic.Value
-	processes sync.WaitGroup
-	config    *Config
+	processes    *sync.WaitGroup
+	config       *Config
+	commands     chan interface{}
+	commandsMult *util.Mult
 }
 
 func (sys *System) Start() {
-	go httpServer(sys)
-	// log.Debug("Start with config:")
-	// log.Debug(spew.Sdump(sys.config))
-	for _, config := range sys.config.Balancers {
-		_, err := NewBalancer(sys, config)
+	backends := make(map[edn.Keyword]*Backend)
+
+	for name, config := range sys.config.Backends {
+		backend, err := NewBackend(sys, string(name), config)
 		if err != nil {
-			log.WithFields(log.Fields{
-				"error":  err,
-				"config": config,
-			}).Fatal("Can't start balancer")
+			log.WithError(err).Fatal("Can't start backend")
+			os.Exit(1)
+		}
+		backends[name] = backend
+	}
+
+	for _, config := range sys.config.Frontends {
+		backend, pst := backends[config.Backend]
+		if !pst {
+			log.Fatalf("There are no backend %s", config.Backend)
+			os.Exit(1)
+		}
+		_, err := NewFrontend(sys, config, backend)
+		if err != nil {
+			log.WithError(err).Fatal("Can't start frontend")
 			os.Exit(1)
 		}
 	}
 
 	sys.processes.Wait()
-	sys.zmq.Term()
 }
 
 func NewSystem(config *Config) (*System, error) {
-	ctx, err := zmq4.NewContext()
-	if err != nil {
-		panic("Can't create ZMQ context")
-	}
-	var running atomic.Value
-	running.Store(true)
-	var processes sync.WaitGroup
+	commands := make(chan interface{}, 10)
 	return &System{
-		zmq:       ctx,
-		Running:   running,
-		config:    config,
-		processes: processes,
+		config:       config,
+		processes:    new(sync.WaitGroup),
+		commands:     commands,
+		commandsMult: util.NewMult(commands),
 	}, nil
 }
 
-func (self *System) CreateSocket(config *SocketConfig) (*zmq4.Socket, error) {
-	socket, err := self.zmq.NewSocket(zmq4.ROUTER)
-	if err != nil {
-		return nil, err
-	}
-	for _, bind := range config.Bind {
-		err = socket.Bind(bind)
-		if err != nil {
-			return nil, err
-		}
-	}
-	err = socket.SetLinger(100 * time.Millisecond)
-	if err != nil {
-		return nil, err
-	}
-	return socket, nil
+func (self *System) Stop() {
+	defer func() {
+		recover()
+		return
+	}()
+	close(self.commands)
 }

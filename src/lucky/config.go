@@ -10,19 +10,18 @@ import (
 var validate = validator.New(&validator.Config{TagName: "validate"})
 
 type Config struct {
-	Balancers []*BalancerConfig `validate:"dive,required"`
+	Frontends []*FrontendConfig              `validate:"dive,required"`
+	Backends  map[edn.Keyword]*BackendConfig `validate:"dive,required"`
 }
 
-type BalancerConfig struct {
-	Name    string        `validate:"required"`
-	Workers int           `validate:"omitempty,min=1"`
-	Front   *SocketConfig `validate:"required"`
-	Back    *SocketConfig `validate:"required"`
-}
-
-type SocketConfig struct {
-	Connect []string `validate:"omitempty,min=1,dive,required"`
+type FrontendConfig struct {
+	Type    edn.Keyword
 	Bind    []string `validate:"omitempty,min=1,dive,required"`
+	Backend edn.Keyword
+}
+
+type BackendConfig struct {
+	Bind []string `validate:"omitempty,min=1,dive,required"`
 }
 
 func ParseConfig(path string) (*Config, error) {

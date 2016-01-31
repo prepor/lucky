@@ -1,7 +1,6 @@
-{:balancers
- [{:name "main"
-   :front {:bind ["tcp://0.0.0.0:6000"]}
-   :back {:bind ["tcp://0.0.0.0:6001"]}}
-  {:name "second"
-   :front {:bind ["tcp://0.0.0.0:6002"]}
-   :back {:bind ["tcp://0.0.0.0:6003"]}}]}
+{:frontends
+ [{:type :zmq
+   :bind ["0.0.0.0:6000"]
+   :backend :main}]
+ :backends
+ {:main {:bind ["0.0.0.0:6001"]}}}

@@ -15,12 +15,7 @@ func signalsHandler(sys *lucky.System, signals chan os.Signal) {
 	for {
 		s := <-signals
 		log.Infof("Signal received: %v", s)
-		if sys.Running.Load().(bool) {
-			sys.Running.Store(false)
-		} else {
-			log.Warn("Stop in progress")
-		}
-
+		sys.Stop()
 	}
 }
 
