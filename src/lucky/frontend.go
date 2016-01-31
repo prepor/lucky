@@ -89,13 +89,13 @@ func (self *ZMQFrontend) listenerLoop(listener *zmtp.Listener, initBackend *Back
 				self.logger.WithError(v.Err).Error("Can't accept socket")
 			} else {
 				self.system.processes.Add(1)
-				go self.socketLoop(v.Socket, &v.Addr, initBackend)
+				go self.socketLoop(v.Socket, v.Addr, initBackend)
 			}
 		}
 	}
 }
 
-func (self *ZMQFrontend) socketLoop(socket *zmtp.Socket, addr *net.Addr, initBackend *Backend) {
+func (self *ZMQFrontend) socketLoop(socket *zmtp.Socket, addr net.Addr, initBackend *Backend) {
 	logger := self.logger.WithField("remote", addr)
 	defer socket.Close()
 	defer logger.Info("Close")
@@ -130,7 +130,7 @@ func (self *ZMQFrontend) socketLoop(socket *zmtp.Socket, addr *net.Addr, initBac
 			}
 		case v := <-answers:
 			err := socket.Send(v.Route, "", v.Reply)
-			requestsHistogram.Observe(time.Since(v.StartTime).Seconds() / 1000)
+			requestsHistogram.Observe(time.Since(v.StartTime).Seconds() * 1000)
 			if err != nil {
 				self.logger.WithError(err).Error("Can't send reply")
 			}

@@ -124,65 +124,116 @@ func (self *Backend) listenerLoop(listener *zmtp.Listener) {
 			} else {
 				self.instances.Add(1)
 				self.system.processes.Add(1)
-				go self.socketLoop(v.Socket, &v.Addr)
+				NewBackendSocket(self, v.Socket, v.Addr)
 			}
 		}
 	}
 }
 
-func (self *Backend) socketLoop(socket *zmtp.Socket, addr *net.Addr) {
-	logger := self.logger.WithField("remote", addr)
-	requests := make(map[string]*Request)
-	defer self.dropRequests(requests)
-	defer socket.Close()
-	defer logger.Info("Close")
-	defer self.instances.Done()
-	defer self.system.processes.Done()
+type BackendSocket struct {
+	backend  *Backend
+	logger   *log.Entry
+	requests map[string]*Request
+	socket   *zmtp.Socket
+}
 
-	logger.Info("Connected")
+func NewBackendSocket(backend *Backend, socket *zmtp.Socket, addr net.Addr) *BackendSocket {
+	self := &BackendSocket{
+		backend:  backend,
+		logger:   backend.logger.WithField("remote", addr),
+		requests: make(map[string]*Request),
+		socket:   socket,
+	}
+	go self.loop()
+	return self
+}
 
-	read := socket.Read()
+func (self *BackendSocket) loop() {
+	read := self.socket.Read()
+	defer self.socket.Close()
+	defer self.dropRequests()
+	defer self.logger.Info("Close")
+	defer self.completeRequests()
+	defer self.backend.instances.Done()
+	defer self.backend.system.processes.Done()
+
+	self.logger.Info("Connected")
+
 	for {
 		select {
-		case <-self.control:
+		case <-self.backend.control:
 			return
-		case req, ok := <-self.requests:
+		case req, ok := <-self.backend.requests:
 			if !ok {
 				return
 			}
-			if err := socket.Send(req.Id, req.Route, "", req.Payload); err != nil {
+			if err := self.socket.Send(req.Id, req.Route, "", req.Payload); err != nil {
 				self.logger.WithError(err).Error("Can't send request")
 				req.Answer([][]byte{[]byte("")})
 			} else {
-				logger.WithField("request", req.Id).Debug("New backend request")
-				requests[req.Id] = req
+				self.logger.WithField("request", req.Id).Debug("New backend request")
+				self.requests[req.Id] = req
 			}
 		case v, ok := <-read:
 			if !ok {
 				return
 			}
-			route, payload, err := MsgWihDelim(v)
-			if err != nil {
-				logger.Error("Can't parse message")
-			} else if len(route) == 0 {
-				logger.Error("Bad formed message")
-			} else {
-				reqId := string(route[0])
-				req, pst := requests[reqId]
-				if pst {
-					delete(requests, reqId)
-					logger.WithField("request", req.Id).Debug("Request reply")
-					req.Answer(payload)
-				} else {
-					logger.WithField("request", reqId).Error("Can't find request")
-				}
+			if !self.handleReply(v) {
+				return
 			}
 		}
 	}
 }
 
-func (self *Backend) dropRequests(requests map[string]*Request) {
-	for _, req := range requests {
+func (self *BackendSocket) dropRequests() {
+	for _, req := range self.requests {
 		req.Answer([][]byte{[]byte("")})
 	}
+}
+
+func (self *BackendSocket) completeRequests() {
+	read := self.socket.Read()
+	forceShutdown := time.After(5 * time.Second)
+	if len(self.requests) == 0 {
+		return
+	}
+	self.logger.Infof("Wait for completion of %d requests", len(self.requests))
+	for {
+		select {
+		case <-forceShutdown:
+			self.logger.Warn("Force shutdown")
+			return
+		case v, ok := <-read:
+			if !ok {
+				return
+			}
+			self.handleReply(v)
+		}
+	}
+}
+
+func (self *BackendSocket) handleReply(msg [][]byte) bool {
+	route, payload, err := MsgWihDelim(msg)
+	if err != nil {
+		self.logger.Error("Can't parse message")
+	} else if len(route) == 0 {
+		self.logger.Error("Bad formed message")
+	} else {
+		reqId := string(route[0])
+		command := string(payload[0])
+		req, pst := self.requests[reqId]
+		if pst {
+			switch command {
+			case "REPLY":
+				delete(self.requests, reqId)
+				self.logger.WithField("request", req.Id).Debug("Request reply")
+				req.Answer(payload)
+			case "DISCONNECT":
+				return false
+			}
+		} else {
+			self.logger.WithField("request", reqId).Error("Can't find request")
+		}
+	}
+	return true
 }
