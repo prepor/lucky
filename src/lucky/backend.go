@@ -149,7 +149,9 @@ func NewBackendSocket(backend *Backend, socket *zmtp.Socket, addr net.Addr) *Bac
 }
 
 func (self *BackendSocket) loop() {
+	BackendsGauge.WithLabelValues(self.backend.name).Inc()
 	read := self.socket.Read()
+	defer BackendsGauge.WithLabelValues(self.backend.name).Dec()
 	defer self.socket.Close()
 	defer self.dropRequests()
 	defer self.logger.Info("Close")
@@ -228,6 +230,8 @@ func (self *BackendSocket) handleReply(msg [][]byte) bool {
 				delete(self.requests, reqId)
 				self.logger.WithField("request", req.Id).Debug("Request reply")
 				req.Answer(payload)
+				RequestsHistogram.WithLabelValues(self.backend.name, string(req.Payload[1])).
+					Observe(time.Since(req.StartTime).Seconds() * 1000)
 			case "DISCONNECT":
 				return false
 			}
