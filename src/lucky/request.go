@@ -37,3 +37,7 @@ func (self *Request) Answer(reply [][]byte) (err error) {
 	self.answers <- self
 	return nil
 }
+
+func (self *Request) Error(e string) error {
+	return self.Answer([][]byte{[]byte(e)})
+}

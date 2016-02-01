@@ -103,7 +103,7 @@ func (self *Backend) startRejector() {
 				return
 			}
 			self.logger.Warn("No backends")
-			v.Answer([][]byte{[]byte("")})
+			v.Error("No backends")
 		}
 	}
 }
@@ -171,7 +171,7 @@ func (self *BackendSocket) loop() {
 			}
 			if err := self.socket.Send(req.Id, req.Route, "", req.Payload); err != nil {
 				self.logger.WithError(err).Error("Can't send request")
-				req.Answer([][]byte{[]byte("")})
+				req.Error("Can't send request to backend")
 			} else {
 				self.logger.WithField("request", req.Id).Debug("New backend request")
 				self.requests[req.Id] = req
@@ -189,7 +189,7 @@ func (self *BackendSocket) loop() {
 
 func (self *BackendSocket) dropRequests() {
 	for _, req := range self.requests {
-		req.Answer([][]byte{[]byte("")})
+		req.Error("Backend disonnected")
 	}
 }
 

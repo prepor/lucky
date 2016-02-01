@@ -33,9 +33,12 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+
+	// Logging
 	if *verbose {
 		log.SetLevel(log.DebugLevel)
 	}
+
 	config, err := lucky.ParseConfig(flag.Args()[0])
 	if err != nil {
 		log.WithFields(log.Fields{"error": err}).Fatal("Error while parsing config")

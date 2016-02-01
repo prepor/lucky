@@ -119,16 +119,17 @@ func (self *ZMQFrontend) socketLoop(socket *zmtp.Socket, addr net.Addr, initBack
 			if !ok {
 				return
 			}
+
 			route, payload, err := MsgWihDelim(v)
 			if err != nil {
 				self.logger.Error("Can't parse message")
-				socket.Send(route, "", "")
+				socket.Send(route, "", "ERROR", "Can't parse message")
 			} else {
 				req := NewRequest(route, payload, answers)
 				logger.WithField("request", req.Id).Debug("New frontend request")
 				if err := backend.AddRequest(req); err != nil {
 					logger.WithError(err).Error("Error in request sending")
-					socket.Send(route, "", "")
+					socket.Send(route, "", "ERROR", "Can't send to backend")
 				}
 			}
 		case v := <-answers:
