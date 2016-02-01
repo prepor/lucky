@@ -4,7 +4,7 @@
 		"publish-github"
 	],
 	"BuildConstraints": "linux windows darwin",
-	"PackageVersion": "0.0.1",
+	"PackageVersion": "0.0.2",
 	"TaskSettings": {
 		"publish-github": {
 			"owner": "prepor",
