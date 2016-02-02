@@ -39,5 +39,5 @@ func (self *Request) Answer(reply [][]byte) (err error) {
 }
 
 func (self *Request) Error(e string) error {
-	return self.Answer([][]byte{[]byte(e)})
+	return self.Answer([][]byte{[]byte("ERROR"), []byte(e)})
 }
